@@ -2,6 +2,7 @@ import tkinter as tk
 from screens.mainScreen import MainScreen
 from screens.playModeScreen import PlayModeScreen
 from screens.carSelectionScreen import CarSelectionScreen
+from screens.raceScreen import RaceScreen
 
 class App(tk.Tk):
     def __init__(self):
