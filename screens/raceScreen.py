@@ -13,26 +13,27 @@ class RaceScreen(tk.Frame):
         self.car_index = car_index
         self.other_player = None
         self.other_car_index = None
+        self.game_over = False
+        self.max_distance = 500
 
         self.configure(bg="#000000")
 
         self.load_car_images()
 
         self.car_label = tk.Label(self, image=self.local_car_img, bg="#000000")
-        self.car_label.place(x=250, y=300)
+        self.car_label.place(x=50, y=300)
 
         self.remote_label = tk.Label(self, text="⏳", font=("Helvetica", 24), bg="#000000", fg="cyan")
-        self.remote_label.place(x=250, y=100)
+        self.remote_label.place(x=50, y=100)
 
         self.winner_label = tk.Label(self, text="", font=("Helvetica", 20), bg="#000000", fg="gold")
         self.winner_label.pack(pady=10)
 
-        self.car_x = 250
+        self.car_x = 50
         self.car_y = 300
-        self.remote_x = 250
+        self.remote_x = 50
         self.remote_y = 100
         self.step = 10
-        self.victory_x = 500
 
         self.client = mqtt.Client()
         self.client.on_connect = self.on_connect
@@ -65,7 +66,7 @@ class RaceScreen(tk.Frame):
 
     def create_controls(self):
         controls_frame = tk.Frame(self, bg="#000000")
-        controls_frame.pack(pady=20)
+        controls_frame.place(x=10, rely=1.0, anchor="sw")
 
         up_btn = tk.Button(controls_frame, text="▲", font=("Helvetica", 16), command=lambda: self.move("up"))
         left_btn = tk.Button(controls_frame, text="◀", font=("Helvetica", 16), command=lambda: self.move("left"))
@@ -78,6 +79,9 @@ class RaceScreen(tk.Frame):
         right_btn.grid(row=1, column=2, padx=10, pady=5)
 
     def move(self, direction):
+        if self.game_over:
+            return
+
         if direction == "up":
             self.car_y -= self.step
         elif direction == "down":
@@ -89,8 +93,9 @@ class RaceScreen(tk.Frame):
 
         self.update_position()
 
-        if self.car_x >= self.victory_x:
-            self.winner_label.config(text=f"{self.player} a gagné !")
+        if self.car_x >= self.max_distance:
+            self.game_over = True
+            self.winner_label.config(text=f"🏁 {self.player} a gagné !")
             self.send_json("race/commands", {"event": "win", "player": self.player})
         else:
             self.send_json("race/commands", {
@@ -121,7 +126,7 @@ class RaceScreen(tk.Frame):
                         self.remote_label.image = remote_car_img
                     print("👤 Adversaire détecté :", self.other_player)
 
-            elif payload.get("uuid") == self.uuid:
+            elif payload.get("uuid") == self.uuid or self.game_over:
                 return
 
             if "action" in payload:
@@ -137,7 +142,8 @@ class RaceScreen(tk.Frame):
                 self.update_position()
 
             elif "event" in payload and payload["event"] == "win":
-                self.winner_label.config(text=f"{payload['player']} a gagné !")
+                self.game_over = True
+                self.winner_label.config(text=f"🏁 {payload['player']} a gagné !")
 
         except Exception as e:
             print("❌ Erreur traitement message :", e)
