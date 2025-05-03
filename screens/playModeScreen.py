@@ -8,6 +8,9 @@ class PlayModeScreen(tk.Frame):
         self.master = master
         self.configure(bg="#000000")
 
+        self.start_button = tk.Button(self, text="Commencer la course", font=("Helvetica", 18))
+        self.start_button.pack(pady=30)
+
         self.load_images()
         self.create_widgets()
 
@@ -26,7 +29,7 @@ class PlayModeScreen(tk.Frame):
         button_frame = tk.Frame(self, bg=None)
         button_frame.place(relx=0.5, rely=0.5, anchor="center")
 
-        tk.Button(button_frame, text="Joueur vs Joueur", command=lambda: self.master.show_frame("carselect")).pack(pady=10)
+        tk.Button(button_frame, text="Joueur vs Joueur", command=self.master.show_car_selection).pack(pady=10)
         tk.Button(button_frame, text="Joueur vs IA", command=lambda: messagebox.showinfo("Joueur vs IA", "À implémenter")).pack(pady=10)
         tk.Button(button_frame, text="Retour au Menu", command=lambda: self.master.show_frame("main")).pack(pady=10)
 

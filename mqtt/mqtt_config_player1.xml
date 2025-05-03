@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<config>
+    <broker_url>broker.hivemq.com</broker_url>
+    <port>1883</port>
+    <location>Player1</location>
+    <topics>
+        <topic>race/commands</topic>
+        <topic>race/player1</topic>
+        <topic>race/player2</topic>
+        <topic>race/chat</topic>
+    </topics>
+</config>
