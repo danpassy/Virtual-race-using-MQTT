@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 from PIL import Image, ImageTk
+from historic import afficher_historique
 
 class MainScreen(tk.Frame):
     def __init__(self, master):
