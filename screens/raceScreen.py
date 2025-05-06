@@ -10,13 +10,15 @@ class RaceScreen(tk.Frame):
     def __init__(self, master, player, uuid, car_index):
         super().__init__(master)
         self.master = master
-        self.player = player  # 'player1' or 'player2'
+        self.player = player
         self.uuid = uuid
         self.car_index = car_index
         self.other_player = "player2" if self.player == "player1" else "player1"
+        self.other_car_index = None
+        self.remote_ready = False
+        self.local_ready = False
         self.game_over = False
         self.room_id = "course123"
-        self.remote_ready = False  # ✅ Nouveau drapeau pour l'attente
 
         self.configure(bg="#000000")
 
@@ -34,7 +36,7 @@ class RaceScreen(tk.Frame):
         self.load_car_images()
 
         self.car_x = self.offset_x
-        self.car_y = 80 if self.player == "player1" else 300  # ✅ Voie propre
+        self.car_y = 80 if self.player == "player1" else 300
         self.car_label = tk.Label(self.canvas, image=self.local_car_img, bg="gray")
         self.car_label.place(x=self.car_x, y=self.car_y)
 
@@ -42,7 +44,10 @@ class RaceScreen(tk.Frame):
         self.remote_y = 270 if self.player == "player1" else 125
         self.remote_label = tk.Label(self.canvas, text="⏳", font=("Helvetica", 24), bg="gray", fg="cyan")
         self.remote_label.place(x=self.remote_x, y=self.remote_y)
-        self.remote_car_img = None
+
+        self.waiting_label = tk.Label(self, text="🕒 En attente de l'autre joueur...", font=("Helvetica", 20), bg="black", fg="white")
+        self.waiting_label.place(relx=0.5, rely=0.5, anchor="center")
+        self.waiting_label.lift()
 
         self.winner_label = tk.Label(self, text="", font=("Helvetica", 20), bg="#000000", fg="gold")
         self.winner_label.place(x=screen_width // 2 - 100, y=20)
@@ -52,7 +57,7 @@ class RaceScreen(tk.Frame):
 
         self.countdown_label = tk.Label(self, text="", font=("Helvetica", 40), fg="white", bg="black")
         self.countdown_label.place(relx=0.5, rely=0.4, anchor="center")
-        self.countdown_label.lift()
+        self.countdown_label.lower()
 
         self.timer_label = tk.Label(self, text="⏱ 0.00s", font=("Helvetica", 18), fg="white", bg="black")
         self.timer_label.place(relx=0.85, rely=0.05, anchor="center")
@@ -60,24 +65,34 @@ class RaceScreen(tk.Frame):
 
         self.start_time = None
         self.timer_running = False
+        self.end_frame = None
 
         self.client = mqtt.Client()
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
         self.client.connect("broker.hivemq.com", 1883, 60)
+        # Publish presence to notify the other player
+        self.client.publish("race/connected", json.dumps({
+            "player": self.player,
+            "uuid": self.uuid
+        }))
+
+        # Publish presence to notify the other player
+        self.client.publish("race/connected", json.dumps({
+            "player": self.player,
+            "uuid": self.uuid
+        }))
+
         self.client.loop_start()
+        self.wait_for_remote_player()
 
         self.client.subscribe(f"race/{self.room_id}/{self.other_player}/move")
         self.client.subscribe(f"race/{self.room_id}/{self.other_player}/win")
+        self.client.subscribe(f"race/{self.room_id}/{self.other_player}/register")
         self.client.subscribe(f"race/{self.room_id}/broadcast")
-        self.client.subscribe(f"race/{self.room_id}/{self.other_player}/register")  # ✅ Pour savoir si l'autre est prêt
 
         self.create_controls()
-        self.end_frame = None
-
         self.publish_register()
-        self.waiting_label = tk.Label(self, text="🔄 En attente de l'autre joueur...", font=("Helvetica", 18), fg="orange", bg="black")
-        self.waiting_label.place(relx=0.5, rely=0.6, anchor="center")
 
     def load_car_images(self):
         try:
@@ -91,7 +106,16 @@ class RaceScreen(tk.Frame):
     def create_controls(self):
         self.master.bind("<Right>", self.move_car)
 
+    def check_start_conditions(self):
+        if self.remote_ready and self.local_ready:
+            self.waiting_label.destroy()
+            self.start_countdown()
+
     def start_countdown(self, count=3):
+        if not self.remote_ready or not self.local_ready:
+            print("[⛔] Tentative de démarrer le compte à rebours avant que les deux joueurs ne soient prêts.")
+            return
+
         if count > 0:
             self.countdown_label.config(text=str(count))
             print(f"[MQTT] 🕒 Compte à rebours: {count}")
@@ -137,6 +161,8 @@ class RaceScreen(tk.Frame):
         topic = f"race/{self.room_id}/{self.player}/register"
         payload = {"uuid": self.uuid, "player": self.player, "car_index": self.car_index}
         self.send_json(topic, payload)
+        self.local_ready = True
+        self.check_start_conditions()
 
     def on_connect(self, client, userdata, flags, rc):
         print("[MQTT] ✅ Connecté avec code:", rc)
@@ -148,14 +174,13 @@ class RaceScreen(tk.Frame):
 
             if msg.topic.endswith("/register"):
                 if data["player"] == self.other_player:
-                    remote_index = data.get("car_index")
-                    self.remote_car_img = self.load_remote_car(remote_index)
-                    if self.remote_car_img:
-                        self.remote_label.config(image=self.remote_car_img, text="")
-                        self.remote_label.image = self.remote_car_img
-                        self.remote_ready = True  # ✅ Maintenant prêt
-                        self.waiting_label.destroy()  # ✅ Supprime le message d'attente
-                        self.start_countdown()  # ✅ Démarre enfin la course
+                    self.remote_ready = True
+                    self.other_car_index = data.get("car_index")
+                    remote_img = self.load_car_images_by_index(self.other_car_index)
+                    if remote_img:
+                        self.remote_label.config(image=remote_img, text="")
+                        self.remote_label.image = remote_img
+                    self.check_start_conditions()
 
             elif msg.topic.endswith("/move"):
                 self.remote_x += self.step
@@ -170,9 +195,9 @@ class RaceScreen(tk.Frame):
         except Exception as e:
             print("❌ Erreur réception MQTT:", e)
 
-    def load_remote_car(self, car_index):
+    def load_car_images_by_index(self, index):
         try:
-            path = f"assets/cars/car{car_index}.png"
+            path = f"assets/cars/car{index}.png"
             car_img = Image.open(path).resize((70, 70), Image.Resampling.LANCZOS)
             return ImageTk.PhotoImage(car_img)
         except Exception as e:
@@ -233,8 +258,13 @@ class RaceScreen(tk.Frame):
         self.countdown_label.place(relx=0.5, rely=0.4, anchor="center")
         self.countdown_label.lift()
 
-        self.waiting_label = tk.Label(self, text="🔄 En attente de l'autre joueur...", font=("Helvetica", 18), fg="orange", bg="black")
-        self.waiting_label.place(relx=0.5, rely=0.6, anchor="center")
+        self.waiting_label = tk.Label(self, text="🕒 En attente de l'autre joueur...", font=("Helvetica", 20), bg="black", fg="white")
+        self.waiting_label.place(relx=0.5, rely=0.5, anchor="center")
+        self.waiting_label.lift()
+
+        self.remote_ready = False
+        self.local_ready = False
+
         self.publish_register()
 
     def save_race_history(self):
@@ -266,7 +296,31 @@ class RaceScreen(tk.Frame):
         with open(historique_file, "w", encoding="utf-8") as f:
             json.dump(historique, f, ensure_ascii=False, indent=2)
 
-    def send_json(self, topic, data):
+    
+
+    def wait_for_remote_player(self):
+        if not self.remote_ready:
+            self.after(1000, self.wait_for_remote_player)
+        else:
+            self.start_race()
+
+
+
+    def wait_for_remote_player(self):
+        if not self.remote_ready:
+            self.after(1000, self.wait_for_remote_player)
+        else:
+            self.start_race()
+
+
+
+    def send_json(self, topic, payload):
+        try:
+            self.client.publish(topic, json.dumps(payload))
+        except Exception as e:
+            print(f"[ERREUR MQTT] Impossible d’envoyer le message sur {topic} : {e}")
+
+def send_json(self, topic, data):
         try:
             self.client.publish(topic, json.dumps(data))
             print(f"[MQTT] ⬆️ PUB {topic}: {data}")
