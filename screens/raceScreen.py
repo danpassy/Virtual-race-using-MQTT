@@ -33,14 +33,17 @@ class RaceScreen(tk.Frame):
         self.load_car_images()
 
         self.car_x = self.offset_x
-        self.car_y = 125 if self.player == "player1" else 300  # ✅ Position sur la bonne voie
+        self.car_y = 80 if self.player == "player1" else 300  # ✅ Position sur la bonne voie
         self.car_label = tk.Label(self.canvas, image=self.local_car_img, bg="gray")
         self.car_label.place(x=self.car_x, y=self.car_y)
 
         self.remote_x = self.offset_x
-        self.remote_y = 300 if self.player == "player1" else 125  # ✅ Position opposée
+        self.remote_y = 270 if self.player == "player1" else 125  # ✅ Position opposée
         self.remote_label = tk.Label(self.canvas, text="⏳", font=("Helvetica", 24), bg="gray", fg="cyan")
         self.remote_label.place(x=self.remote_x, y=self.remote_y)
+
+        #Initialisation de la variable d'image distante (nécessaire pour le remplacement plus tard)
+        self.remote_car_img = None
 
         self.winner_label = tk.Label(self, text="", font=("Helvetica", 20), bg="#000000", fg="gold")
         self.winner_label.place(x=screen_width // 2 - 100, y=20)
@@ -142,9 +145,15 @@ class RaceScreen(tk.Frame):
             data = json.loads(msg.payload.decode())
             print(f"[MQTT] 📩 RECV {msg.topic}: {json.dumps(data)}")
 
-            if msg.topic.endswith("/move"):
-                self.remote_x += self.step
-                self.update_position()
+            # ✅ Si on reçoit un enregistrement du joueur distant
+            if msg.topic.endswith("/register"):
+                if data["player"] == self.other_player:
+                    remote_index = data.get("car_index")
+                    self.remote_car_img = self.load_remote_car(remote_index)
+                    if self.remote_car_img:
+                        self.remote_label.config(image=self.remote_car_img, text="")
+                        self.remote_label.image = self.remote_car_img  # ⚠️ nécessaire pour que l’image reste visible
+
 
             elif msg.topic.endswith("/win"):
                 self.declare_winner(data.get("player", "Autre joueur"))
@@ -197,9 +206,9 @@ class RaceScreen(tk.Frame):
             self.end_frame = None
 
         self.car_x = self.offset_x
-        self.car_y = 125 if self.player == "player1" else 300
+        self.car_y = 80 if self.player == "player1" else 300
         self.remote_x = self.offset_x
-        self.remote_y = 300 if self.player == "player1" else 125
+        self.remote_y = 270 if self.player == "player1" else 125
 
         self.car_label.place(x=self.car_x, y=self.car_y)
         self.remote_label.place(x=self.remote_x, y=self.remote_y)
