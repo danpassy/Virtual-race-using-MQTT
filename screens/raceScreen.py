@@ -10,15 +10,14 @@ class RaceScreen(tk.Frame):
     def __init__(self, master, player, uuid, car_index):
         super().__init__(master)
         self.master = master
-        self.player = player
+        self.player = player  # 'player1' or 'player2'
         self.uuid = uuid
         self.car_index = car_index
-        self.other_player = None
-        self.other_car_index = None
+        self.other_player = "player2" if self.player == "player1" else "player1"
         self.game_over = False
-        self.max_distance = 500
+        self.room_id = "course123"
 
-        self.configure(bg="#000000")  # Fond noir
+        self.configure(bg="#000000")
 
         screen_width = self.master.winfo_screenwidth()
         target_width = int(screen_width * 0.8)
@@ -34,12 +33,12 @@ class RaceScreen(tk.Frame):
         self.load_car_images()
 
         self.car_x = self.offset_x
-        self.car_y = 300
+        self.car_y = 125 if self.player == "player1" else 300  # ✅ Position sur la bonne voie
         self.car_label = tk.Label(self.canvas, image=self.local_car_img, bg="gray")
         self.car_label.place(x=self.car_x, y=self.car_y)
 
         self.remote_x = self.offset_x
-        self.remote_y = 100
+        self.remote_y = 300 if self.player == "player1" else 125  # ✅ Position opposée
         self.remote_label = tk.Label(self.canvas, text="⏳", font=("Helvetica", 24), bg="gray", fg="cyan")
         self.remote_label.place(x=self.remote_x, y=self.remote_y)
 
@@ -66,12 +65,14 @@ class RaceScreen(tk.Frame):
         self.client.connect("broker.hivemq.com", 1883, 60)
         self.client.loop_start()
 
-        self.client.subscribe("race/commands")
-        self.client.subscribe("race/registration")
+        self.client.subscribe(f"race/{self.room_id}/{self.other_player}/move")
+        self.client.subscribe(f"race/{self.room_id}/{self.other_player}/win")
+        self.client.subscribe(f"race/{self.room_id}/broadcast")
 
         self.create_controls()
         self.end_frame = None
 
+        self.publish_register()
         self.start_countdown()
 
     def load_car_images(self):
@@ -83,24 +84,21 @@ class RaceScreen(tk.Frame):
             print("Erreur chargement voiture locale :", e)
             self.local_car_img = None
 
-    def load_remote_car(self, car_index):
-        try:
-            path = f"assets/cars/car{car_index}.png"
-            car_img = Image.open(path).resize((70, 70), Image.Resampling.LANCZOS)
-            return ImageTk.PhotoImage(car_img)
-        except Exception as e:
-            print("Erreur chargement voiture distante :", e)
-            return None
-
     def create_controls(self):
         self.master.bind("<Right>", self.move_car)
 
     def start_countdown(self, count=3):
         if count > 0:
             self.countdown_label.config(text=str(count))
+            print(f"[MQTT] 🕒 Compte à rebours: {count}")
             self.after(1000, self.start_countdown, count - 1)
         else:
             self.countdown_label.config(text="GO!")
+            print("[MQTT] 🚀 Départ de la course !")
+            self.send_json(f"race/{self.room_id}/broadcast", {
+                "type": "start",
+                "message": "La course commence !"
+            })
             self.after(1000, self.countdown_label.destroy)
             self.start_timer()
 
@@ -121,7 +119,8 @@ class RaceScreen(tk.Frame):
 
         self.car_x += self.step
         self.update_position()
-        self.client.publish("race/commands", json.dumps({"uuid": self.uuid}))
+        move_topic = f"race/{self.room_id}/{self.player}/move"
+        self.send_json(move_topic, {"uuid": self.uuid, "direction": "right"})
 
         if self.car_x >= self.victory_x:
             self.declare_winner(self.player)
@@ -130,53 +129,48 @@ class RaceScreen(tk.Frame):
         self.car_label.place(x=self.car_x, y=self.car_y)
         self.remote_label.place(x=self.remote_x, y=self.remote_y)
 
+    def publish_register(self):
+        topic = f"race/{self.room_id}/{self.player}/register"
+        payload = {"uuid": self.uuid, "player": self.player, "car_index": self.car_index}
+        self.send_json(topic, payload)
+
     def on_connect(self, client, userdata, flags, rc):
-        print("Connecté au broker MQTT avec le code de résultat:", rc)
+        print("[MQTT] ✅ Connecté avec code:", rc)
 
     def on_message(self, client, userdata, msg):
         try:
             data = json.loads(msg.payload.decode())
-            print(f"[MQTT] Message reçu sur {msg.topic} : {data}")
+            print(f"[MQTT] 📩 RECV {msg.topic}: {json.dumps(data)}")
 
-            if data.get("type") == "register":
-                if data.get("uuid") != self.uuid and not self.other_player:
-                    self.other_player = data.get("player")
-                    self.other_car_index = data.get("car")
-                    remote_car_img = self.load_remote_car(self.other_car_index)
-                    if remote_car_img:
-                        self.remote_label.config(image=remote_car_img, text="")
-                        self.remote_label.image = remote_car_img
-
-            elif data.get("uuid") == self.uuid or self.game_over:
-                return
-
-            if "action" in data:
-                direction = data["action"]
-                if direction == "right":
-                    self.remote_x += self.step
-                elif direction == "left":
-                    self.remote_x -= self.step
-                elif direction == "up":
-                    self.remote_y -= self.step
-                elif direction == "down":
-                    self.remote_y += self.step
+            if msg.topic.endswith("/move"):
+                self.remote_x += self.step
                 self.update_position()
 
-            elif "event" in data and data["event"] == "win":
-                self.game_over = True
-                self.timer_running = False
-                self.winner_label.config(text=f"🏁 {data['player']} a gagné !")
-                self.show_end_buttons()
+            elif msg.topic.endswith("/win"):
+                self.declare_winner(data.get("player", "Autre joueur"))
+
+            elif msg.topic.endswith("/broadcast"):
+                print(f"[MQTT] 📣 Message broadcast : {data.get('message')}")
 
         except Exception as e:
-            print("❌ Erreur traitement message :", e)
+            print("❌ Erreur réception MQTT:", e)
 
     def declare_winner(self, winner):
         self.winner_label.config(text=f"🏁 {winner} wins! 🏁")
         self.game_over = True
         self.timer_running = False
-        self.save_race_history()
+
+        topic = f"race/{self.room_id}/{self.player}/win"
+        payload = {"uuid": self.uuid, "player": self.player, "time": f"{time.time() - self.start_time:.2f}"}
+        self.send_json(topic, payload)
+
+        self.send_json(f"race/{self.room_id}/broadcast", {
+            "type": "info",
+            "message": f"{winner} a terminé la course."
+        })
+
         self.show_end_buttons()
+        self.save_race_history()
 
     def show_end_buttons(self):
         if self.end_frame:
@@ -203,9 +197,9 @@ class RaceScreen(tk.Frame):
             self.end_frame = None
 
         self.car_x = self.offset_x
-        self.car_y = 300
+        self.car_y = 125 if self.player == "player1" else 300
         self.remote_x = self.offset_x
-        self.remote_y = 100
+        self.remote_y = 300 if self.player == "player1" else 125
 
         self.car_label.place(x=self.car_x, y=self.car_y)
         self.remote_label.place(x=self.remote_x, y=self.remote_y)
@@ -215,6 +209,7 @@ class RaceScreen(tk.Frame):
         self.countdown_label.place(relx=0.5, rely=0.4, anchor="center")
         self.countdown_label.lift()
 
+        self.publish_register()
         self.start_countdown()
 
     def save_race_history(self):
@@ -249,5 +244,6 @@ class RaceScreen(tk.Frame):
     def send_json(self, topic, data):
         try:
             self.client.publish(topic, json.dumps(data))
+            print(f"[MQTT] ⬆️ PUB {topic}: {data}")
         except Exception as e:
             print("❌ Erreur envoi JSON :", e)
