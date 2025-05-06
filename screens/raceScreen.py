@@ -16,6 +16,7 @@ class RaceScreen(tk.Frame):
         self.other_player = "player2" if self.player == "player1" else "player1"
         self.game_over = False
         self.room_id = "course123"
+        self.remote_ready = False  # ✅ Nouveau drapeau pour l'attente
 
         self.configure(bg="#000000")
 
@@ -33,7 +34,7 @@ class RaceScreen(tk.Frame):
         self.load_car_images()
 
         self.car_x = self.offset_x
-        self.car_y = 80 if self.player == "player1" else 300
+        self.car_y = 80 if self.player == "player1" else 300  # ✅ Voie propre
         self.car_label = tk.Label(self.canvas, image=self.local_car_img, bg="gray")
         self.car_label.place(x=self.car_x, y=self.car_y)
 
@@ -68,14 +69,15 @@ class RaceScreen(tk.Frame):
 
         self.client.subscribe(f"race/{self.room_id}/{self.other_player}/move")
         self.client.subscribe(f"race/{self.room_id}/{self.other_player}/win")
-        self.client.subscribe(f"race/{self.room_id}/{self.other_player}/register")  # 🔁 pour récupérer car_index
         self.client.subscribe(f"race/{self.room_id}/broadcast")
+        self.client.subscribe(f"race/{self.room_id}/{self.other_player}/register")  # ✅ Pour savoir si l'autre est prêt
 
         self.create_controls()
         self.end_frame = None
 
         self.publish_register()
-        self.start_countdown()
+        self.waiting_label = tk.Label(self, text="🔄 En attente de l'autre joueur...", font=("Helvetica", 18), fg="orange", bg="black")
+        self.waiting_label.place(relx=0.5, rely=0.6, anchor="center")
 
     def load_car_images(self):
         try:
@@ -85,15 +87,6 @@ class RaceScreen(tk.Frame):
         except Exception as e:
             print("Erreur chargement voiture locale :", e)
             self.local_car_img = None
-
-    def load_remote_car(self, car_index):
-        try:
-            path = f"assets/cars/car{car_index}.png"
-            car_img = Image.open(path).resize((70, 70), Image.Resampling.LANCZOS)
-            return ImageTk.PhotoImage(car_img)
-        except Exception as e:
-            print("Erreur chargement voiture distante :", e)
-            return None
 
     def create_controls(self):
         self.master.bind("<Right>", self.move_car)
@@ -154,15 +147,18 @@ class RaceScreen(tk.Frame):
             print(f"[MQTT] 📩 RECV {msg.topic}: {json.dumps(data)}")
 
             if msg.topic.endswith("/register"):
-                if data.get("player") == self.other_player:
-                    car_index = data.get("car_index")
-                    self.remote_car_img = self.load_remote_car(car_index)
+                if data["player"] == self.other_player:
+                    remote_index = data.get("car_index")
+                    self.remote_car_img = self.load_remote_car(remote_index)
                     if self.remote_car_img:
                         self.remote_label.config(image=self.remote_car_img, text="")
-                        self.remote_label.image = self.remote_car_img  # ✅ nécessaire pour affichage
+                        self.remote_label.image = self.remote_car_img
+                        self.remote_ready = True  # ✅ Maintenant prêt
+                        self.waiting_label.destroy()  # ✅ Supprime le message d'attente
+                        self.start_countdown()  # ✅ Démarre enfin la course
 
             elif msg.topic.endswith("/move"):
-                self.remote_x += self.step  # ✅ Ajout du mouvement distant
+                self.remote_x += self.step
                 self.update_position()
 
             elif msg.topic.endswith("/win"):
@@ -173,6 +169,15 @@ class RaceScreen(tk.Frame):
 
         except Exception as e:
             print("❌ Erreur réception MQTT:", e)
+
+    def load_remote_car(self, car_index):
+        try:
+            path = f"assets/cars/car{car_index}.png"
+            car_img = Image.open(path).resize((70, 70), Image.Resampling.LANCZOS)
+            return ImageTk.PhotoImage(car_img)
+        except Exception as e:
+            print("Erreur chargement voiture distante :", e)
+            return None
 
     def declare_winner(self, winner):
         self.winner_label.config(text=f"🏁 {winner} wins! 🏁")
@@ -228,8 +233,9 @@ class RaceScreen(tk.Frame):
         self.countdown_label.place(relx=0.5, rely=0.4, anchor="center")
         self.countdown_label.lift()
 
+        self.waiting_label = tk.Label(self, text="🔄 En attente de l'autre joueur...", font=("Helvetica", 18), fg="orange", bg="black")
+        self.waiting_label.place(relx=0.5, rely=0.6, anchor="center")
         self.publish_register()
-        self.start_countdown()
 
     def save_race_history(self):
         historique_file = "historique.json"
