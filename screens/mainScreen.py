@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 from PIL import Image, ImageTk
+from historic import afficher_historique
 
 class MainScreen(tk.Frame):
     def __init__(self, master):
@@ -27,7 +28,7 @@ class MainScreen(tk.Frame):
         button_frame.place(relx=0.5, rely=0.5, anchor="center")
 
         tk.Button(button_frame, text="Jouer", command=lambda: self.master.show_frame("playmode")).pack(pady=10)
-        tk.Button(button_frame, text="Historique", command=lambda: messagebox.showinfo("Historique", "À implémenter")).pack(pady=10)
+        tk.Button(button_frame, text="Historique", command=lambda: afficher_historique(self)).pack(pady=10)
         tk.Button(button_frame, text="Aide", command=lambda: messagebox.showinfo("Aide", "À implémenter")).pack(pady=10)
         tk.Button(button_frame, text="Quitter", command=self.master.destroy).pack(pady=10)
 
