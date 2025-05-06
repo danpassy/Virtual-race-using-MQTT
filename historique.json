@@ -4038,5 +4038,19 @@
         "Perdu"
       ]
     ]
+  },
+  {
+    "date": "06/05/2025 14:38",
+    "carte": "Désert",
+    "classement": [
+      [
+        "player1",
+        "27.72s"
+      ],
+      [
+        "player2",
+        "Perdu"
+      ]
+    ]
   }
 ]
