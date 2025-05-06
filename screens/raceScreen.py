@@ -71,20 +71,7 @@ class RaceScreen(tk.Frame):
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
         self.client.connect("broker.hivemq.com", 1883, 60)
-        # Publish presence to notify the other player
-        self.client.publish("race/connected", json.dumps({
-            "player": self.player,
-            "uuid": self.uuid
-        }))
-
-        # Publish presence to notify the other player
-        self.client.publish("race/connected", json.dumps({
-            "player": self.player,
-            "uuid": self.uuid
-        }))
-
         self.client.loop_start()
-        self.wait_for_remote_player()
 
         self.client.subscribe(f"race/{self.room_id}/{self.other_player}/move")
         self.client.subscribe(f"race/{self.room_id}/{self.other_player}/win")
@@ -296,31 +283,7 @@ class RaceScreen(tk.Frame):
         with open(historique_file, "w", encoding="utf-8") as f:
             json.dump(historique, f, ensure_ascii=False, indent=2)
 
-    
-
-    def wait_for_remote_player(self):
-        if not self.remote_ready:
-            self.after(1000, self.wait_for_remote_player)
-        else:
-            self.start_race()
-
-
-
-    def wait_for_remote_player(self):
-        if not self.remote_ready:
-            self.after(1000, self.wait_for_remote_player)
-        else:
-            self.start_race()
-
-
-
-    def send_json(self, topic, payload):
-        try:
-            self.client.publish(topic, json.dumps(payload))
-        except Exception as e:
-            print(f"[ERREUR MQTT] Impossible d’envoyer le message sur {topic} : {e}")
-
-def send_json(self, topic, data):
+    def send_json(self, topic, data):
         try:
             self.client.publish(topic, json.dumps(data))
             print(f"[MQTT] ⬆️ PUB {topic}: {data}")
