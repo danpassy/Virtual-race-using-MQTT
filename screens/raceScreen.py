@@ -33,16 +33,14 @@ class RaceScreen(tk.Frame):
         self.load_car_images()
 
         self.car_x = self.offset_x
-        self.car_y = 80 if self.player == "player1" else 300  # ✅ Position sur la bonne voie
+        self.car_y = 80 if self.player == "player1" else 300
         self.car_label = tk.Label(self.canvas, image=self.local_car_img, bg="gray")
         self.car_label.place(x=self.car_x, y=self.car_y)
 
         self.remote_x = self.offset_x
-        self.remote_y = 270 if self.player == "player1" else 125  # ✅ Position opposée
+        self.remote_y = 270 if self.player == "player1" else 125
         self.remote_label = tk.Label(self.canvas, text="⏳", font=("Helvetica", 24), bg="gray", fg="cyan")
         self.remote_label.place(x=self.remote_x, y=self.remote_y)
-
-        #Initialisation de la variable d'image distante (nécessaire pour le remplacement plus tard)
         self.remote_car_img = None
 
         self.winner_label = tk.Label(self, text="", font=("Helvetica", 20), bg="#000000", fg="gold")
@@ -70,6 +68,7 @@ class RaceScreen(tk.Frame):
 
         self.client.subscribe(f"race/{self.room_id}/{self.other_player}/move")
         self.client.subscribe(f"race/{self.room_id}/{self.other_player}/win")
+        self.client.subscribe(f"race/{self.room_id}/{self.other_player}/register")  # 🔁 pour récupérer car_index
         self.client.subscribe(f"race/{self.room_id}/broadcast")
 
         self.create_controls()
@@ -86,6 +85,15 @@ class RaceScreen(tk.Frame):
         except Exception as e:
             print("Erreur chargement voiture locale :", e)
             self.local_car_img = None
+
+    def load_remote_car(self, car_index):
+        try:
+            path = f"assets/cars/car{car_index}.png"
+            car_img = Image.open(path).resize((70, 70), Image.Resampling.LANCZOS)
+            return ImageTk.PhotoImage(car_img)
+        except Exception as e:
+            print("Erreur chargement voiture distante :", e)
+            return None
 
     def create_controls(self):
         self.master.bind("<Right>", self.move_car)
@@ -145,15 +153,17 @@ class RaceScreen(tk.Frame):
             data = json.loads(msg.payload.decode())
             print(f"[MQTT] 📩 RECV {msg.topic}: {json.dumps(data)}")
 
-            # ✅ Si on reçoit un enregistrement du joueur distant
             if msg.topic.endswith("/register"):
-                if data["player"] == self.other_player:
-                    remote_index = data.get("car_index")
-                    self.remote_car_img = self.load_remote_car(remote_index)
+                if data.get("player") == self.other_player:
+                    car_index = data.get("car_index")
+                    self.remote_car_img = self.load_remote_car(car_index)
                     if self.remote_car_img:
                         self.remote_label.config(image=self.remote_car_img, text="")
-                        self.remote_label.image = self.remote_car_img  # ⚠️ nécessaire pour que l’image reste visible
+                        self.remote_label.image = self.remote_car_img  # ✅ nécessaire pour affichage
 
+            elif msg.topic.endswith("/move"):
+                self.remote_x += self.step  # ✅ Ajout du mouvement distant
+                self.update_position()
 
             elif msg.topic.endswith("/win"):
                 self.declare_winner(data.get("player", "Autre joueur"))
