@@ -37,9 +37,21 @@ class App(tk.Tk):
         self.show_frame("carselect")
 
     def show_race_screen(self, player, uuid, car_index):
+        if "race" in self.frames:
+            try:
+                self.frames["race"].client.loop_stop()  # 🛑 Arrête proprement MQTT
+                self.frames["race"].client.disconnect()
+                self.frames["race"].destroy()
+                del self.frames["race"]
+            except Exception as e:
+                print("Erreur lors du nettoyage de l'ancienne RaceScreen:", e)
+
         frame = RaceScreen(self, player, uuid, car_index)
         self.frames["race"] = frame
         self.show_frame("race")
+
+
+
 
 if __name__ == "__main__":
     app = App()
