@@ -83,12 +83,8 @@ class RaceScreen(tk.Frame):
             "uuid": self.uuid
         }))
 
-        self.client.subscribe(f"race/ready/{self.other_player}")
-        self.client.subscribe(f"race/ready/{self.player}")
         self.client.loop_start()
-        self.local_ready = True
-        self.remote_ready = False
-        self.send_ready_signal()
+        self.wait_for_remote_player()
 
         self.client.subscribe(f"race/{self.room_id}/{self.other_player}/move")
         self.client.subscribe(f"race/{self.room_id}/{self.other_player}/win")
@@ -300,6 +296,22 @@ class RaceScreen(tk.Frame):
         with open(historique_file, "w", encoding="utf-8") as f:
             json.dump(historique, f, ensure_ascii=False, indent=2)
 
+    
+
+    def wait_for_remote_player(self):
+        if not self.remote_ready:
+            self.after(1000, self.wait_for_remote_player)
+        else:
+            self.start_race()
+
+
+
+    def wait_for_remote_player(self):
+        if not self.remote_ready:
+            self.after(1000, self.wait_for_remote_player)
+        else:
+            self.start_race()
+
 
 
     def send_json(self, topic, payload):
@@ -307,37 +319,6 @@ class RaceScreen(tk.Frame):
             self.client.publish(topic, json.dumps(payload))
         except Exception as e:
             print(f"[ERREUR MQTT] Impossible d’envoyer le message sur {topic} : {e}")
-
-
-
-    def send_ready_signal(self):
-        topic = f"race/ready/{self.player}"
-        self.send_json(topic, {"status": "ready", "uuid": self.uuid})
-
-    def on_message(self, client, userdata, msg):
-        payload = json.loads(msg.payload.decode())
-        topic = msg.topic
-
-        if topic == f"race/{self.other_player}":
-            # Handle car movement of the other player
-            direction = payload.get("direction")
-            if direction == "right":
-                self.remote_x += 10
-                self.remote_label.place(x=self.remote_x, y=self.remote_y)
-
-        elif topic == f"race/ready/{self.other_player}":
-            print(f"[MQTT] {self.other_player} est prêt")
-            self.remote_ready = True
-            self.remote_label.config(text="🚗 Prêt !")
-            self.check_both_ready()
-
-        elif topic == f"race/ready/{self.player}":
-            # Ignore own readiness confirmation
-            pass
-
-    def check_both_ready(self):
-        if self.local_ready and self.remote_ready:
-            self.start_race()
 
 def send_json(self, topic, data):
         try:
